@@ -1,0 +1,14 @@
+{
+  "model": {
+    "name": "qwen3.6-27b",
+    "generationConfig": {
+      "modalities": {
+        "image": true
+      }
+    }
+  },
+  "modelProviders": {
+    "openai": []
+  },
+  "$version": 4
+}

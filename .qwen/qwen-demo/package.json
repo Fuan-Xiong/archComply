@@ -1,0 +1,7 @@
+{
+	"type": "module",
+	"dependencies": {
+		"@qwen-code/sdk": "^0.1.8",
+		"picocolors": "^1.1.1"
+	}
+}

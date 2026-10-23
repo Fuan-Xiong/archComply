@@ -15,7 +15,7 @@
     "cli": "node src/cli.js",
     "frontend": "npm --prefix frontend-vue3 run dev",
     "frontend:install": "npm --prefix frontend-vue3 install",
-    "check": "npm run validate && node --check src/server.js && node --check src/harness.js && node --check src/sse.js && node --check src/metrics.js && node --check src/sdkClient.js && node --check src/rules/parser.js && node --check src/rules/loadRules.js && node --check src/rules/compareRule.js && node --check src/rules/evidence.js && node --check src/rules/coverage.js"
+    "check": "npm run validate && node --check src/server.js && node --check src/harness/harness.js && node --check src/harness/sse.js && node --check src/harness/metrics.js && node --check src/harness/sdkClient.js && node --check src/rules/parser.js && node --check src/rules/loadRules.js && node --check src/rules/compareRule.js && node --check src/rules/evidence.js && node --check src/rules/coverage.js"
   },
   "dependencies": {
     "@qwen-code/sdk": "^0.1.22"

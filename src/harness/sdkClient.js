@@ -6,7 +6,7 @@
 import { mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { config, log } from './config.js'
+import { config, log } from '../config.js'
 
 let sdkModule
 async function loadSdk() {

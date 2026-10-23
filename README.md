@@ -12,13 +12,14 @@
 ```
 archComply/
 ├── src/                       # 后端主链路（Node + @qwen-code/sdk）
-│   ├── server.js              # HTTP + SSE：/api/review /api/upload /healthz /api/docs
-│   ├── harness.js             # 主循环：解析→规则→规划→执行→校验→汇总（含四道防死循环闸）
-│   ├── sse.js                 # SSE 发帧（唯一出口，保证协议）
-│   ├── metrics.js             # Token / 阶段耗时 / 调用次数
-│   ├── sdkClient.js           # qwen sdk 封装：并发闸、超时、重试、无 key 自动离线
-│   ├── config.js              # 全部环境变量集中处
-│   ├── cli.js                 # 不开服务跑一次评审
+│   ├── server.js              # HTTP + SSE 入口：/api/review /api/upload /healthz /api/docs
+│   ├── config.js              # 全部环境变量集中处（公共）
+│   ├── cli.js                 # 不开服务跑一次评审（公共）
+│   ├── harness/               # B1 目录
+│   │   ├── harness.js         #   主循环：解析→规则→规划→执行→校验→汇总（四道防死循环闸）
+│   │   ├── sse.js             #   SSE 发帧（唯一出口，保证协议）
+│   │   ├── metrics.js         #   Token / 阶段耗时 / 调用次数
+│   │   └── sdkClient.js       #   qwen sdk 封装：并发闸、超时、重试、无 key 自动离线
 │   └── rules/                 # B2 目录
 │       ├── parser.js          #   docx/txt → block（blockId/page/charStart/charEnd）
 │       ├── loadRules.js       #   解析 docs/rules清单.md 表格

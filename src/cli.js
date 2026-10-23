@@ -5,7 +5,7 @@
 // 输出：与 SSE 同协议的事件（便于对照 docs/sse-events.md）
 
 import { parseFile } from './rules/parser.js'
-import { runReview } from './harness.js'
+import { runReview } from './harness/harness.js'
 
 const file = process.argv[2]
 const sse = {

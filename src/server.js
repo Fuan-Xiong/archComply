@@ -6,8 +6,8 @@ import http from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { config, log } from './config.js'
-import { createSseWriter } from './sse.js'
-import { runReview } from './harness.js'
+import { createSseWriter } from './harness/sse.js'
+import { runReview } from './harness/harness.js'
 import { parseDocument } from './rules/parser.js'
 
 const CORS = {

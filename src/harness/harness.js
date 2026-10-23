@@ -3,13 +3,13 @@
 // 四道闸：最大轮次 / 单步超时 / 重试换策略 / 无进展终止
 
 import { randomUUID } from 'node:crypto'
-import { config, log } from './config.js'
+import { config, log } from '../config.js'
 import { Metrics } from './metrics.js'
-import { loadRules, byPriority } from './rules/loadRules.js'
-import { parseDocument } from './rules/parser.js'
-import { compareRule } from './rules/compareRule.js'
-import { retrieveContext } from './rules/retrieve.js'
-import { buildCoverage } from './rules/coverage.js'
+import { loadRules, byPriority } from '../rules/loadRules.js'
+import { parseDocument } from '../rules/parser.js'
+import { compareRule } from '../rules/compareRule.js'
+import { retrieveContext } from '../rules/retrieve.js'
+import { buildCoverage } from '../rules/coverage.js'
 
 /**
  * @param {object} req
@@ -209,7 +209,7 @@ async function resolveDocs(body) {
   for (const d of body.docs ?? []) docs.push(d) // 已解析文档或原始 buffer 均支持
   if (docs.length === 0) {
     // 骨架阶段：未做上传持久化，用内存演示文档兜底（B2 接上传后替换此分支）
-    const { demoParsed } = await import('../mock/demo-doc.js')
+    const { demoParsed } = await import('../../mock/demo-doc.js')
     const id = body.docIds?.[0] ?? 'doc-001'
     docs.push(demoParsed(id))
   }

@@ -2,7 +2,7 @@
 // 原则：确定性规则优先代码比对（零 Token）；语义规则才调 LLM。
 // 返回结构严格对齐 docs/result.schema.json 的 issues[]，并强制"无证据不判 fail"。
 
-import { complete } from '../sdkClient.js'
+import { complete } from '../harness/sdkClient.js'
 import { findEvidence } from './evidence.js'
 
 /**

@@ -4,7 +4,7 @@
 //   node src/cli.js path/to/合同.docx      # 解析真实文件并评审
 // 输出：与 SSE 同协议的事件（便于对照 docs/sse-events.md）
 
-import { parseFile } from './rules/parser.js'
+import { parseFile } from './rules/parser/index.js'
 import { runReview } from './harness/harness.js'
 
 const file = process.argv[2]

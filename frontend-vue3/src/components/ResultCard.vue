@@ -1,63 +1,139 @@
 <script setup>
-// ResultCard.vue —— 单条规则结果卡片（fail / review / pass）
-const props = defineProps({ item: { type: Object, required: true } })
-const emit = defineEmits(['locate'])
+// ResultCard.vue —— 单条规则核查结果卡片（F Owner）
+// props: result（契约字段：ruleId/ruleName/status/severity/evidence[]/suggestion?/confidence?/reason?）、active
+// 交互：点击 evidence → emit('evidence-click', evidence)；点击卡片 → emit('select', ruleId)
+import { computed } from 'vue'
 
-const labels = { fail: '不合规', review: '需复核', pass: '合规' }
-const sev = { high: '高', medium: '中', low: '低' }
+const props = defineProps({
+  result: { type: Object, required: true },
+  active: { type: Boolean, default: false },
+})
+const emit = defineEmits(['evidence-click', 'select'])
+
+const STATUS_TEXT = { pass: '合规', fail: '不合规', review: '需复核', not_applicable: '不适用' }
+const SEVERITY_TEXT = { high: '高', medium: '中', low: '低' }
+const MAX_EVIDENCE = 200 // 证据片段展示上限（字）
+
+const statusText = computed(() => STATUS_TEXT[props.result.status] ?? props.result.status)
+const severityText = computed(() => SEVERITY_TEXT[props.result.severity] ?? props.result.severity)
+
+/** 置信度归一化 0~1；非法/缺失返回 null（不显示） */
+const confidence = computed(() => {
+  const c = props.result.confidence
+  return typeof c === 'number' && Number.isFinite(c) ? Math.max(0, Math.min(1, c)) : null
+})
+
+const truncate = (t) => (t && t.length > MAX_EVIDENCE ? `${t.slice(0, MAX_EVIDENCE)}…` : t)
+
+const onCardClick = () => emit('select', props.result.ruleId)
 </script>
 
 <template>
-  <article :class="['card', item.verdict]">
-    <header>
-      <span :class="['badge', item.verdict]">{{ labels[item.verdict] ?? item.verdict }}</span>
-      <strong>{{ item.ruleId }}</strong>
-      <span class="title">{{ item.title }}</span>
-      <span v-if="item.severity" :class="['sev', item.severity]">{{ sev[item.severity] }}</span>
-      <span class="method" :title="item.method === 'deterministic' ? '代码比对，零 Token' : '模型判定'">
-        {{ item.method === 'deterministic' ? '规则比对' : '模型判定' }}
-      </span>
-      <span v-if="typeof item.confidence === 'number'" class="conf">{{ Math.round(item.confidence * 100) }}%</span>
+  <article :class="['rc', `rc-${result.status}`, { active }]" @click="onCardClick">
+    <header class="rc-head">
+      <span class="rc-ruleid">{{ result.ruleId }}</span>
+      <span class="rc-name">{{ result.ruleName }}</span>
+      <span :class="['badge', 'st', result.status]">{{ statusText }}</span>
+      <span v-if="result.severity" :class="['badge', 'sev', result.severity]">{{ severityText }}</span>
     </header>
-    <p class="reason">{{ item.reason }}</p>
-    <p v-if="item.suggestion" class="suggest">建议：{{ item.suggestion }}</p>
-    <ul v-if="item.evidence?.length" class="ev">
-      <li v-for="(e, i) in item.evidence" :key="i" @click="emit('locate', e)">
-        <span class="where">{{ e.docName }} · 第{{ e.page }}页 · {{ e.blockId }}</span>
-        <span class="snippet">「{{ e.snippet }}」</span>
-        <span class="jump">定位 ›</span>
+
+    <!-- 证据列表：docName + page（可能 null）+ text 片段（200 字截断） -->
+    <ul v-if="result.evidence?.length" class="rc-ev">
+      <li
+        v-for="(e, i) in result.evidence"
+        :key="i"
+        class="rc-ev-item"
+        title="点击定位原文"
+        @click.stop="emit('evidence-click', e)"
+      >
+        <span class="rc-where">{{ e.docName }}<template v-if="e.page != null"> · 第{{ e.page }}页</template></span>
+        <span class="rc-snippet">「{{ truncate(e.text) }}」</span>
       </li>
     </ul>
-    <p v-else class="noev">无证据：按铁律不判不合规，转人工复核。</p>
+
+    <p v-if="result.suggestion" class="rc-suggest">建议：{{ result.suggestion }}</p>
+
+    <!-- reason：仅 review 展示（fail 的判定理由见 chat 流，卡片聚焦人工复核） -->
+    <p v-if="result.status === 'review' && result.reason" class="rc-reason">{{ result.reason }}</p>
+
+    <!-- 置信度：进度条 + 百分比 -->
+    <div v-if="confidence != null" class="rc-conf">
+      <div class="rc-confbar">
+        <div class="rc-conffill" :style="{ width: (confidence * 100).toFixed(1) + '%' }"></div>
+      </div>
+      <span class="rc-confnum">{{ Math.round(confidence * 100) }}%</span>
+    </div>
   </article>
 </template>
 
 <style scoped>
-.card { background: var(--panel); border: 1px solid var(--line); border-left-width: 3px; border-radius: 8px; padding: 10px 14px; }
-.card.fail { border-left-color: var(--red); }
-.card.review { border-left-color: var(--amber); }
-.card.pass { border-left-color: var(--green); }
-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.badge { font-size: 11px; padding: 1px 7px; border-radius: 10px; font-weight: 600; }
-.badge.fail { background: #3a1418; color: var(--red); }
-.badge.review { background: #35260b; color: var(--amber); }
-.badge.pass { background: #10291a; color: var(--green); }
-.title { color: var(--text); }
-.sev { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
-.sev.high { color: var(--red); border-color: #4a2024; }
-.sev.medium { color: var(--amber); border-color: #4a3a1a; }
-.method { font-size: 11px; color: var(--accent); }
-.conf { margin-left: auto; font-size: 11px; color: var(--muted); }
-.reason { margin: 8px 0 4px; }
-.suggest { margin: 0; color: var(--muted); font-size: 13px; }
-.ev { list-style: none; margin: 8px 0 0; padding: 0; }
-.ev li {
-  display: flex; gap: 8px; align-items: baseline; cursor: pointer;
-  background: #10131a; border-radius: 6px; padding: 6px 8px; font-size: 12px; margin-top: 6px;
+.rc {
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease;
 }
-.ev li:hover { outline: 1px solid var(--accent); }
-.where { color: var(--muted); flex: none; }
-.snippet { color: #cbd5e1; }
-.jump { margin-left: auto; color: var(--accent); flex: none; }
-.noev { margin: 8px 0 0; font-size: 12px; color: var(--amber); }
+.rc:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+/* active：左边框高亮 */
+.rc.active {
+  outline: 1px solid var(--color-primary);
+}
+.rc.pass { border-left-color: var(--color-success); }
+.rc.fail { border-left-color: var(--color-danger); }
+.rc.review { border-left-color: var(--color-warning); }
+.rc.not_applicable { border-left-color: var(--color-muted); }
+
+.rc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rc-ruleid { font-weight: 700; }
+.rc-name { color: var(--color-muted); font-size: 13px; flex: 1; min-width: 100px; }
+
+.badge {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+/* status：pass 绿 / fail 红 / review 黄 / not_applicable 灰 */
+.badge.st.pass { background: #10291a; color: var(--color-success); }
+.badge.st.fail { background: #3a1418; color: var(--color-danger); }
+.badge.st.review { background: #35260b; color: var(--color-warning); }
+.badge.st.not_applicable { background: #1a1d24; color: var(--color-muted); }
+/* severity：high 红 / medium 橙 / low 蓝 */
+.badge.sev.high { background: #3a1418; color: var(--color-danger); }
+.badge.sev.medium { background: #3a2810; color: #f59e0b; }
+.badge.sev.low { background: #10213a; color: #60a5fa; }
+
+.rc-ev { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rc-ev-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  background: #10131a;
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.rc-ev-item:hover { outline: 1px solid var(--color-primary); }
+.rc-where { color: var(--color-muted); flex: none; }
+.rc-snippet { color: #cbd5e1; word-break: break-all; }
+
+.rc-suggest { margin: 8px 0 0; color: var(--color-muted); font-size: 13px; }
+.rc-reason { margin: 8px 0 0; color: var(--color-warning); font-size: 13px; }
+
+.rc-conf { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.rc-confbar { flex: 1; height: 6px; background: var(--color-border); border-radius: 3px; overflow: hidden; }
+.rc-conffill { height: 100%; background: var(--color-primary); transition: width 0.3s; }
+.rc-confnum { font-size: 12px; color: var(--color-muted); }
 </style>

@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto'
 import { config, log } from './config.js'
 import { createSseWriter } from './harness/sse.js'
 import { runReview } from './harness/harness.js'
-import { parseDocument } from './rules/parser.js'
+import { parseDocument } from './rules/parser/index.js'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',

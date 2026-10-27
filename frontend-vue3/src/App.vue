@@ -1,201 +1,215 @@
 <script setup>
-// App.vue —— 演示用最小可跑页面（F Owner 可整体替换）
-// 覆盖：流式聊天、进度、结果卡片、覆盖矩阵告警、Token/耗时、中断、重试、溯源高亮
-import { computed, ref } from 'vue'
-import { runReview, BASE } from './composables/useSSE'
-import MessageList from './components/MessageList.vue'
-import ResultCard from './components/ResultCard.vue'
+// App.vue —— 前端整体集成（F Owner）
+// 区域：顶部 Toolbar / 进度条 / 左侧 ChatBox(60%) / 右侧 TraceViewer(40%) / 底部 MetricsPanel+SeverityChart
+// 状态：documents / results / metrics / coverage / activeEvidence / activeRuleId / progress / errorObj / mode
+// 流程：点「开始核查」→ 进度推进 → 消息流式 → 结果卡片 → 指标图表 → done；点证据右侧滚动高亮；中断/重试可用
+import { onMounted, ref, watch } from 'vue'
+import { useSSE } from './composables/useSSE'
+import { buildRequestPayload } from './mock/requestPayload.js'
+import Toolbar from './components/Toolbar.vue'
+import ProgressBar from './components/ProgressBar.vue'
+import ErrorBanner from './components/ErrorBanner.vue'
+import ChatBox from './components/ChatBox.vue'
 import TraceViewer from './components/TraceViewer.vue'
 import MetricsPanel from './components/MetricsPanel.vue'
+import SeverityChart from './components/SeverityChart.vue'
 
-const messages = ref([])
-const issues = ref([])
-const progress = ref({ percent: 0, stageLabel: '', detail: '' })
+const sse = useSSE()
+const mode = ref('mock') // 数据源：mock | real
+const runId = ref('') // 当前 run 的 runId（run_started 事件取得；real 中断时发给 /api/review/abort）
+const documents = ref([])
+const results = ref([]) // result 事件聚合（按 ruleId upsert）
 const metrics = ref(null)
-const result = ref(null)
-const status = ref('idle') // idle | running | done | error | aborted
-const errorMsg = ref('')
-const traceHint = ref(null)
-let ac = null
+const coverage = ref(null)
+const activeEvidence = ref(null) // TraceViewer 定位
+const activeRuleId = ref('') // ResultCard active 样式
+const progress = ref({ stage: '', percent: 0, message: '' })
+const errorObj = ref(null) // { code, message }（ErrorBanner 展示）
 
-const canStart = computed(() => status.value !== 'running')
-const coverage = computed(() => result.value?.coverage ?? null)
-
-function handleEvent(event, data) {
-  switch (event) {
-    case 'meta':
-      metrics.value = { tokenIn: 0, tokenOut: 0, tokenTotal: 0, durationMs: 0 }
-      break
-    case 'progress':
-      progress.value = data
-      break
-    case 'message':
-      appendMessage(data)
-      break
-    case 'rule_result':
-      upsertIssue(data)
-      break
-    case 'metrics':
-      metrics.value = data
-      break
-    case 'result':
-      result.value = data.payload
-      issues.value = data.payload.issues ?? []
-      metrics.value = { ...metrics.value, ...data.payload.metrics }
-      break
-    case 'error':
-      errorMsg.value = `${data.code}：${data.message}`
-      status.value = data.code === 'aborted' ? 'aborted' : 'error'
-      break
-    case 'done':
-      progress.value = { percent: 100, stageLabel: '完成', detail: '' }
-      if (status.value === 'running') status.value = 'done'
-      break
-  }
-}
-
-function appendMessage({ delta, channel = 'text', ruleId = null }) {
-  if (!delta) return
-  const last = messages.value[messages.value.length - 1]
-  // 同一 ruleId/同一 channel 的片段合并，避免碎成一堆气泡
-  if (last && last.channel === channel && last.ruleId === ruleId) last.text += delta
-  else messages.value.push({ channel, ruleId, text: delta })
-}
-
-function upsertIssue(r) {
-  const idx = issues.value.findIndex((i) => i.ruleId === r.ruleId)
-  const item = { ...r }
-  if (idx >= 0) issues.value.splice(idx, 1, item)
-  else issues.value.push(item)
-}
-
-async function start() {
-  messages.value = []
-  issues.value = []
-  result.value = null
-  traceHint.value = null
-  errorMsg.value = ''
-  progress.value = { percent: 0, stageLabel: '准备中', detail: '' }
-  status.value = 'running'
-  ac = new AbortController()
-  try {
-    await runReview({ docIds: ['doc-001'], mode: 'demo' }, { onEvent: handleEvent, signal: ac.signal })
-    if (status.value === 'running') status.value = 'done'
-  } catch (err) {
-    if (err.name === 'AbortError') status.value = 'aborted'
-    else {
-      status.value = 'error'
-      errorMsg.value = err.message
+// watch events：聚合各事件
+watch(
+  () => sse.events.value.length,
+  () => {
+    let lastMetrics = null
+    let lastError = null
+    for (const ev of sse.events.value) {
+      switch (ev.event) {
+        case 'run_started':
+          runId.value = ev.data?.runId ?? ''
+          break
+        case 'documents':
+          documents.value = ev.data?.documents ?? []
+          break
+        case 'progress':
+          progress.value = {
+            stage: ev.data?.stage ?? '',
+            percent: ev.data?.percent ?? 0,
+            message: ev.data?.message ?? '',
+          }
+          break
+        case 'result': {
+          const idx = results.value.findIndex((r) => r.ruleId === ev.data?.ruleId)
+          if (idx >= 0) results.value.splice(idx, 1, ev.data)
+          else results.value.push(ev.data)
+          break
+        }
+        case 'metrics':
+          lastMetrics = ev.data
+          break
+        case 'done':
+          coverage.value = ev.data?.coverage ?? null
+          if (ev.data?.metrics) lastMetrics = ev.data.metrics
+          break
+        case 'error':
+          lastError = { code: ev.data?.code ?? 'UNKNOWN', message: ev.data?.message ?? '' }
+          break
+      }
     }
+    if (lastMetrics) metrics.value = lastMetrics
+    if (lastError) errorObj.value = lastError
+  },
+)
+
+// status 变化：离开 error/aborted 时清理错误横幅
+watch(
+  () => sse.status.value,
+  (s) => {
+    if (s === 'streaming') errorObj.value = null
+    else if (s === 'done') errorObj.value = null
+  },
+)
+
+const start = () => {
+  errorObj.value = null
+  if (mode.value === 'real') {
+    // 真实后端：POST /api/review，请求体来自 requestPayload（documents 路径 + ruleManifest + options）
+    sse.connect({ url: '/api/review', body: buildRequestPayload(), mode: 'real' })
+  } else {
+    sse.connect({ mode: 'mock' })
   }
 }
-
-function abort() {
-  ac?.abort()
-  status.value = 'aborted'
+const abort = () => {
+  if (mode.value === 'real' && runId.value) {
+    // real 模式：先通知服务端中止（按 runId 定位 activeRun），再本地断开流
+    fetch('/api/review/abort', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: runId.value }),
+    }).catch((e) => console.warn('[abort] 服务端中止请求失败', e))
+  }
+  sse.abort()
+  errorObj.value = { code: 'ABORT', message: '已中断' }
+}
+const retry = start
+const toggleMock = () => {
+  mode.value = mode.value === 'mock' ? 'real' : 'mock'
 }
 
-function locate(evidence) {
-  traceHint.value = evidence
+function onEvidenceClick(evidence) {
+  activeEvidence.value = evidence // TraceViewer 滚动高亮
+}
+function onSelect(ruleId) {
+  activeRuleId.value = ruleId // ResultCard active 样式
+}
+function onResultClick(result) {
+  console.log('[result-click]', result)
 }
 
-const statusLabel = {
-  idle: '待开始', running: '评审中…', done: '已完成', error: '出错', aborted: '已中断',
-}
+onMounted(() => {
+  // 不自动连接：按流程由用户点「开始核查」触发
+})
 </script>
 
 <template>
-  <header class="topbar">
-    <h1>archComply <span>合同合规评审</span></h1>
-    <div class="status">
-      <span :class="['dot', status]"></span>{{ statusLabel[status] }}
-      <code>{{ BASE }}</code>
-    </div>
-  </header>
+  <div class="app">
+    <Toolbar
+      :status="sse.status"
+      :mock-mode="mode === 'mock'"
+      @start="start"
+      @abort="abort"
+      @retry="retry"
+      @toggle-mock="toggleMock"
+    />
+    <ProgressBar
+      :percent="progress.percent ?? 0"
+      :stage="progress.stage ?? ''"
+      :visible="sse.status === 'streaming'"
+    />
+    <ErrorBanner :error="errorObj" @retry="retry" />
 
-  <main class="layout">
-    <section class="left">
-      <div class="toolbar">
-        <button :disabled="!canStart" @click="start">
-          {{ status === 'done' ? '重新评审' : '开始评审' }}
-        </button>
-        <button class="ghost" :disabled="status !== 'running'" @click="abort">中断</button>
-        <button v-if="status === 'error' || status === 'aborted'" class="ghost" @click="start">重试</button>
-        <div class="bar" :title="`${progress.percent}%`">
-          <div class="fill" :style="{ width: progress.percent + '%' }"></div>
-        </div>
-        <small>{{ progress.percent }}% · {{ progress.stageLabel }} {{ progress.detail }}</small>
-      </div>
-
-      <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
-
-      <MessageList :messages="messages" />
-
-      <div class="cards">
-        <ResultCard
-          v-for="i in issues"
-          :key="i.ruleId"
-          :item="i"
-          @locate="locate"
+    <main class="body">
+      <section class="chat">
+        <ChatBox
+          :events="sse.events"
+          :status="sse.status"
+          :active-rule-id="activeRuleId"
+          @result-click="onResultClick"
+          @evidence-click="onEvidenceClick"
+          @select="onSelect"
         />
-      </div>
-    </section>
+      </section>
+      <aside class="trace">
+        <TraceViewer :documents="documents" :active-evidence="activeEvidence" />
+      </aside>
+    </main>
 
-    <aside class="right">
-      <MetricsPanel :metrics="metrics" :coverage="coverage" :summary="result?.summary" />
-      <TraceViewer :evidence="traceHint" />
-    </aside>
-  </main>
+    <footer class="metrics">
+      <div class="metrics-grid">
+        <MetricsPanel :metrics="metrics" :coverage="coverage" :results="results" />
+        <SeverityChart :results="results" />
+      </div>
+    </footer>
+  </div>
 </template>
 
-<style>
-:root {
-  --bg: #0f1115;
-  --panel: #171a21;
-  --line: #262b36;
-  --text: #e6e9ef;
-  --muted: #98a2b3;
-  --red: #ef4444;
-  --amber: #f59e0b;
-  --green: #22c55e;
-  --accent: #5b8def;
+<style scoped>
+.app {
+  position: relative; /* ErrorBanner absolute 定位基准 */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+
+.body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 3fr 2fr; /* ChatBox 60% / TraceViewer 40% */
+  gap: 12px;
+  padding: 12px 16px;
+  min-height: 0;
 }
-.topbar {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 14px 20px; border-bottom: 1px solid var(--line);
+
+.chat {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden; /* ChatBox 内部自行滚动 */
+  min-height: 0;
 }
-.topbar h1 { font-size: 17px; margin: 0; letter-spacing: .5px; }
-.topbar h1 span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 8px; }
-.status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
-.status code { background: #10131a; padding: 2px 6px; border-radius: 4px; }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.dot.running { background: var(--accent); animation: pulse 1s infinite; }
-.dot.done { background: var(--green); }
-.dot.error { background: var(--red); }
-.dot.aborted { background: var(--amber); }
-@keyframes pulse { 50% { opacity: .35 } }
-.layout { display: grid; grid-template-columns: 1fr 380px; gap: 16px; padding: 16px; align-items: start; }
-@media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
-.toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-button {
-  background: var(--accent); color: #fff; border: 0; border-radius: 6px;
-  padding: 8px 16px; cursor: pointer; font-size: 13px;
+
+.trace {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: auto;
 }
-button:disabled { opacity: .45; cursor: not-allowed; }
-button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
-.bar { flex: 1; min-width: 140px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
-.fill { height: 100%; background: var(--accent); transition: width .3s; }
-.toolbar small { color: var(--muted); width: 100%; }
-.error { color: var(--red); background: #2a1518; padding: 8px 12px; border-radius: 6px; }
-.cards { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
-.right { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 16px; }
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
-.panel h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
+
+.metrics {
+  flex: none;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 1000px) {
+  .body {
+    grid-template-columns: 1fr;
+  }
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

@@ -70,6 +70,29 @@ export async function runReview(req, sse, signal, deps = {}) {
       for (const doc of out.documents ?? []) {
         for (const b of doc.blocks ?? []) blockIndex.set(b.blockId, { ...b, docId: b.docId ?? doc.docId, docName: b.docName ?? doc.docName })
       }
+      // 补发 documents 事件：TraceViewer 溯源数据（PARSING 后立即发，早于任何 result 事件）。
+      // 字段 slim：只留前端需要的 docId/docName/fileType/pageCount/blocks[].{blockId,page,type,heading,text,charStart,charEnd}，
+      // 不携带 fullText/bbox 等内部字段。单条事件整批发（slim 后 data 远小于 512KB，无需拆分；
+      // 若未来超阈值需分文档发，前端 documents case 为覆盖语义，须同步改为累加，本次不动前端）。
+      if ((out.documents ?? []).length > 0) {
+        run._emit('documents', {
+          documents: (out.documents ?? []).map((doc) => ({
+            docId: doc.docId,
+            docName: doc.docName,
+            fileType: doc.fileType ?? null,
+            pageCount: doc.pageCount ?? null,
+            blocks: (doc.blocks ?? []).map((b) => ({
+              blockId: b.blockId,
+              page: b.page ?? null,
+              type: b.type ?? 'text',
+              heading: b.heading ?? null,
+              text: b.text ?? '',
+              charStart: b.charStart ?? 0,
+              charEnd: b.charEnd ?? 0,
+            })),
+          })),
+        })
+      }
       return out
     })
 
@@ -93,6 +116,7 @@ export async function runReview(req, sse, signal, deps = {}) {
         concurrency: req?.options?.concurrency, // undefined → executor 默认 config.harness.concurrency
         signal: ctl.signal,
         sse,
+        metrics, // LLM 语义比对的 usage/llmCalls 累加
       })
     })
     const verify = await runStage('VERIFYING', async () => {

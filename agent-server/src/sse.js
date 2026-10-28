@@ -4,8 +4,8 @@
 
 import { config } from './config/env.js'
 
-/** 核心约束规定的 SSE 事件集 */
-export const SSE_EVENTS = ['run_started', 'progress', 'message', 'result', 'metrics', 'warning', 'error', 'done']
+/** 核心约束规定的 SSE 事件集（含前端溯源契约要求的 documents 事件） */
+export const SSE_EVENTS = ['run_started', 'progress', 'documents', 'message', 'result', 'metrics', 'warning', 'error', 'done']
 
 /**
  * 为响应创建 SSE 处理器。

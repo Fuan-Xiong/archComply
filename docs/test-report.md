@@ -51,17 +51,22 @@
 
 ## 5. 剩余风险（真实存在）
 
-1. **semantic 规则无真实比对器**：registry 未接 runSemantic 技能，semantic/cross_doc 规则走兜底 → result=review + REVIEW_RESULT warning（演示中体现为"需人工复核"）。
+1. **semantic 判定依赖真实 LLM 凭据**：registry 已接 `runSemantic`（调 `sdk/client.js chat()`，B+D 修复），需有效 `QWEN_API_KEY` + 可达 `QWEN_BASE_URL`；无真实 key 时降级 review（reason=「LLM 调用失败：…」/「LLM 输出非 JSON」），真实 key 下可出 pass/fail 判定与 tokens 累加（DeepSeek 通路实测 llmCalls=1、tokens 347-845）。
 2. **evidence 定位未接**：executor 的 `locateEvidence` 缺省返回 `[]` → result.evidence 为空，前端溯源高亮无数据。
 3. **documents / message 事件不发**：harness 未转发 documents 事件、executor 不产 message → 前端 TraceViewer 空态、聊天流无模型消息。
 4. **done.summary=null**：verify 未产出摘要（rules 概览前端有指标面板兜底，summary 位空）。
-5. **tokens=0 / llmCalls=0**：registry 链路无 LLM 调用（模型未接线），指标面板 Token 显示 0。
+5. **tokens / llmCalls 依赖真实 key**：registry 已接 LLM（`runSemantic`），DeepSeek 通路实测 llmCalls=1、tokens 347-845；无有效凭据时仍为 0。
 6. **前端主 chunk 689KB > 500KB**：未 code-split（non-blocking）。
 7. **测试/脚本缺失**：`test/contract.test.js` 与 `scripts/run-all-tests.sh`、`scripts/e2e-smoke.mjs`、`scripts/e2e-http.mjs`、`scripts/e2e-abnormal.mjs` 均不存在（本期以等效 node --test / npm run validate / curl 替代）；可固化自动化需另行创建（未确认不创建）。
 8. **agent-server 无独立 package.json**：`npm start` 解析根脚本启动旧架构服务（8080）；启动须用 `PORT=3001 QWEN_API_KEY=… MODEL_NAME=… node src/server.js`。
 9. **旧模块 `src/rules/parser/pdf.js`**：`doc.destroy` 崩溃（pdfjs v6）+ 缺 cMapUrl + 标题吞并正文行（skills 版已修，src 版重构时同步）。
 10. **`@modelcontextprotocol/sdk` 未声明**且 node_modules 不完整（skills MCP 服务依赖，环境风险）。
 11. **旧组件 `MessageList.vue` 残留**（未引用，不影响运行）。
+12. **F008「技术方案有比选」召回粒度不足（2026-10-28 阶段 0 实测）**：可研报告「技术方案」章节以标题/目录行形式存在；`retrieveContext`（含同页相邻 ±2、总 ≤5 扩展）召回仍以标题为主、缺章节正文 → 模型保守判 **review**（confidence 0.3-0.65）而非 fail——标记为已知限制（不改 runSemantic/prompt 前提下的现状）。
+13. **语义规则保守 review 口径（2026-10-28 阶段 1 实测：7 条 semantic = 1 pass + 6 review、fail 0）**：
+    - 语义规则全 review（基本）：模型在证据不足时保守复核（reason=「语义判定为复核」），符合「无证据不得 fail」策略；
+    - 已知限制：**目录行与正文缺失场景下，模型倾向 review 而非 fail**（召回含目录行/标题、缺章节正文时尤为明显）；
+    - **答辩口径**：确定性规则全自动执行并有证据；语义规则由模型判定，证据不足时显式 review 交人工复核，覆盖矩阵（total/done/review/failed）保证**不静默漏查**。
 
 ## 6. 是否可进入演示
 

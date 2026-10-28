@@ -123,7 +123,7 @@ onMounted(() => {
 <template>
   <div class="app">
     <Toolbar
-      :status="sse.status"
+      :status="sse.status.value"
       :mock-mode="mode === 'mock'"
       @start="start"
       @abort="abort"
@@ -133,15 +133,15 @@ onMounted(() => {
     <ProgressBar
       :percent="progress.percent ?? 0"
       :stage="progress.stage ?? ''"
-      :visible="sse.status === 'streaming'"
+      :visible="sse.status.value === 'streaming'"
     />
     <ErrorBanner :error="errorObj" @retry="retry" />
 
     <main class="body">
       <section class="chat">
         <ChatBox
-          :events="sse.events"
-          :status="sse.status"
+          :events="sse.events.value"
+          :status="sse.status.value"
           :active-rule-id="activeRuleId"
           @result-click="onResultClick"
           @evidence-click="onEvidenceClick"
